@@ -493,55 +493,139 @@ function normalizeCategoryKey(label) {
   return '';
 }
 
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ── JSON 구조 응답에서 카테고리 빌드 ──
 function buildCategories(cats) {
   if (!cats || typeof cats !== 'object') return {};
-
   const result = {};
   for (const [key, val] of Object.entries(cats)) {
-    const normalizedKey = normalizeCategoryKey(key);
-    if (!normalizedKey) continue;
-
-    result[normalizedKey] = {
+    const nk = normalizeCategoryKey(key);
+    if (!nk) continue;
+    result[nk] = {
       score: Number.isFinite(Number(val?.score)) ? Number(val.score) : 0,
-      max: Number.isFinite(Number(val?.max)) ? Number(val.max) : 20,
-      feedback: [val?.feedback_strengths, val?.feedback_improvements].filter(Boolean).join(' | ') || String(val?.feedback || '')
+      max:   Number.isFinite(Number(val?.max))   ? Number(val.max)   : (CATEGORY_MAX[nk] || 20),
+      feedback: [val?.feedback_strengths, val?.feedback_improvements]
+                  .filter(Boolean).join(' | ') || String(val?.feedback || '')
     };
   }
   return result;
 }
 
+// ── 텍스트 응답 파서 (멀티-포맷 지원) ──
 function parseAiResponse(data) {
   const payload = data || {};
+
+  /* 경로 1: 구조화 JSON 응답 */
   const structuredCategories = buildCategories(payload.categories);
   if (Object.keys(structuredCategories).length > 0) {
     return {
       total_score: Number.isFinite(Number(payload.total_score)) ? Number(payload.total_score) : 0,
-      max_score: Number.isFinite(Number(payload.max_score)) ? Number(payload.max_score) : 100,
-      categories: structuredCategories
+      max_score:   Number.isFinite(Number(payload.max_score))   ? Number(payload.max_score)   : 100,
+      categories:  structuredCategories
     };
   }
 
+  /* 경로 2: 텍스트 응답 파싱 */
   const content = typeof payload.content === 'string' ? payload.content : '';
-  const totalMatch = content.match(/Total Score:\s*([\d.]+)\s*\/\s*([\d.]+)\s*/i);
+  console.log('[GEO] AI 원문:\n', content);
+
+  // 총점 추출 — "Total Score: 72 / 100" 또는 "총점: 72/100" 등
+  const totalMatch =
+    content.match(/Total\s+Score\s*[:\-]?\s*([\d.]+)\s*\/\s*([\d.]+)/i) ||
+    content.match(/총점\s*[:\-]?\s*([\d.]+)\s*\/\s*([\d.]+)/i) ||
+    content.match(/종합\s*점수\s*[:\-]?\s*([\d.]+)\s*\/\s*([\d.]+)/i);
+
   const categories = {};
 
-  const sectionRegex = /\[(.*?)\][\s\S]*?- 점수:\s*([\d.]+)\s*\/\s*([\d.]+)[\s\S]*?- 강점:\s*(.*?)\n- 개선점:\s*(.*?)(?=\n\n\[|$)/gi;
-
-  for (const match of content.matchAll(sectionRegex)) {
-    const [, rawLabel, score, max, strengths, improvements] = match;
+  // ── 시도 1: [섹션] 형식 ──
+  // [카테고리명] ... - 점수: X / Y ... - 강점: ... - 개선점: ...
+  // 섹션 끝: 빈 줄 + [ 또는 텍스트 끝 (엄격하지 않게)
+  const fmt1 = /\[([^\]]+)\]([\s\S]+?)(?=\n\s*\[|\n\s*카테고리\s*\d|\n\s*Category\s*\d|$)/gi;
+  for (const m of content.matchAll(fmt1)) {
+    const [, rawLabel, body] = m;
     const key = normalizeCategoryKey(rawLabel);
     if (!key) continue;
 
+    // 점수: X / Y  (dash 있든 없든, 공백 유연)
+    const scoreM = body.match(/[-•*]?\s*점수\s*[:\-]\s*([\d.]+)\s*\/\s*([\d.]+)/i) ||
+                   body.match(/[-•*]?\s*score\s*[:\-]\s*([\d.]+)\s*\/\s*([\d.]+)/i) ||
+                   body.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+
+    const strengthM  = body.match(/[-•*]\s*강점\s*[:\-]\s*([\s\S]+?)(?=\n\s*[-•*]|$)/i);
+    const improveM   = body.match(/[-•*]\s*개선점\s*[:\-]\s*([\s\S]+?)(?=\n\s*[-•*]|$)/i);
+    const commentM   = body.match(/[-•*]\s*(?:평가|코멘트|요약|설명)\s*[:\-]\s*([\s\S]+?)(?=\n\s*[-•*]|$)/i);
+
+    const feedbackParts = [
+      strengthM?.[1]?.trim(),
+      improveM?.[1]?.trim(),
+      commentM?.[1]?.trim()
+    ].filter(Boolean);
+
+    const parsedScore = scoreM ? Number(scoreM[1]) : 0;
+    const parsedMax   = scoreM ? Number(scoreM[2]) : (CATEGORY_MAX[key] || 20);
+
     categories[key] = {
-      score: Number(score) || 0,
-      max: Number(max) || 20,
-      feedback: [strengths.trim(), improvements.trim()].filter(Boolean).join(' | ')
+      score:    parsedScore,
+      max:      parsedMax,
+      feedback: feedbackParts.join(' | ')
     };
   }
 
+  // ── 시도 2: "카테고리 N: 이름" 형식 ──
+  if (Object.keys(categories).length === 0) {
+    const fmt2 = /(?:카테고리\s*\d+|Category\s*\d+)\s*[:\-]\s*([^\n]+)\n([\s\S]+?)(?=\n\s*(?:카테고리|Category)\s*\d|$)/gi;
+    for (const m of content.matchAll(fmt2)) {
+      const [, rawLabel, body] = m;
+      const key = normalizeCategoryKey(rawLabel);
+      if (!key) continue;
+      const scoreM = body.match(/([\d.]+)\s*\/\s*([\d.]+)/);
+      if (!scoreM) continue;
+      categories[key] = {
+        score:    Number(scoreM[1]) || 0,
+        max:      Number(scoreM[2]) || (CATEGORY_MAX[key] || 20),
+        feedback: body.replace(scoreM[0], '').replace(/[-•*\n]/g, ' ').trim().slice(0, 300)
+      };
+    }
+  }
+
+  // ── 시도 3: 카테고리 라벨 근방의 점수 패턴 검색 ──
+  if (Object.keys(categories).length === 0) {
+    for (const key of CATEGORY_ORDER) {
+      const label      = CATEGORY_LABELS[key];
+      const shortLabel = CATEGORY_SHORT_LABELS[key];
+      const re = new RegExp(
+        `(?:${escapeRegex(label)}|${escapeRegex(shortLabel)})[\\s\\S]{0,300}?` +
+        `(?:점수|score)[\\s\\S]{0,50}?(\\d+)\\s*\\/\\s*(\\d+)`, 'gi'
+      );
+      const hit = re.exec(content);
+      if (hit) {
+        categories[key] = {
+          score:    Number(hit[1]) || 0,
+          max:      Number(hit[2]) || (CATEGORY_MAX[key] || 20),
+          feedback: ''
+        };
+      }
+    }
+  }
+
+  // ── max 보정: AI가 잘못된 만점을 반환한 경우 CATEGORY_MAX로 정규화 ──
+  for (const [key, val] of Object.entries(categories)) {
+    const expected = CATEGORY_MAX[key];
+    if (expected && val.max !== expected) {
+      // 비율을 유지하며 점수 재계산
+      val.score = Math.round((val.score / val.max) * expected * 10) / 10;
+      val.max   = expected;
+    }
+  }
+
+  // 총점: 텍스트에 없으면 카테고리 점수 합산
+  const computedTotal = Object.values(categories).reduce((s, c) => s + c.score, 0);
   return {
-    total_score: totalMatch ? Number(totalMatch[1]) : 0,
-    max_score: totalMatch ? Number(totalMatch[2]) : 100,
+    total_score: totalMatch ? Number(totalMatch[1]) : computedTotal,
+    max_score:   totalMatch ? Number(totalMatch[2]) : 100,
     categories
   };
 }
@@ -577,10 +661,11 @@ function parseAiResponse(data) {
           const aiText   = (data.aiResult && data.aiResult.content) ? data.aiResult.content : '';
           const aiResult = parseAiResponse({ content: aiText });
           renderPage({
-            orderId:   data.orderId,
-            targetUrl: data.targetUrl,
-            jobStatus: data.jobStatus,
-            createdAt: data.createdAt,
+            orderId:    data.orderId,
+            targetUrl:  data.targetUrl,
+            jobStatus:  data.jobStatus,
+            createdAt:  data.createdAt,
+            rawContent: aiText,   // 파싱 실패 시 raw 표시용
             aiResult: {
               total_score: aiResult.total_score,
               max_score:   aiResult.max_score,
@@ -609,8 +694,25 @@ function parseAiResponse(data) {
 /* ── 렌더링 ── */
 function renderPage(report) {
   const ai      = report.aiResult;
-  const cats    = ai.categories;
+  const cats    = ai.categories || {};
   const catKeys = CATEGORY_ORDER.filter(key => cats[key]);
+
+  // 파싱 완전 실패 시 피드백 영역에 raw 텍스트 표시
+  if (catKeys.length === 0) {
+    console.warn('[GEO] 카테고리 파싱 실패 — raw content를 표시합니다.');
+    const feedbackList = document.getElementById('feedbackList');
+    if (feedbackList) {
+      const rawText = (report.rawContent || '').replace(/</g, '&lt;');
+      feedbackList.innerHTML = `
+        <div class="insight-item med">
+          <span class="insight-icon">⚠️</span>
+          <div class="insight-text">
+            <strong>카테고리 점수 파싱 실패</strong><br>
+            <pre style="white-space:pre-wrap;font-size:0.78rem;margin-top:8px;">${rawText || 'AI 응답 없음'}</pre>
+          </div>
+        </div>`;
+    }
+  }
 
   document.getElementById('ph-title').textContent = report.targetUrl;
   document.getElementById('m-order-id').textContent = '#' + report.orderId;
@@ -697,6 +799,7 @@ function renderPage(report) {
 function initRadarChart(catKeys, cats) {
   const canvas = document.getElementById('radarChart');
   if (!canvas) return;
+  if (!catKeys || catKeys.length === 0) return; // 데이터 없으면 스킵
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
 
@@ -781,6 +884,7 @@ function initRadarChart(catKeys, cats) {
 function initBarChart(catKeys, cats) {
   const canvas = document.getElementById('barChart');
   if (!canvas) return;
+  if (!catKeys || catKeys.length === 0) return; // 데이터 없으면 스킵
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
 
