@@ -996,6 +996,17 @@ window.switchTab = switchTab;
     btn.textContent = '제출 중...';
     btn.disabled = true;
 
+    // 토큰 없으면 더미 로그인 자동 실행
+    if (!localStorage.getItem('ACCESS_TOKEN')) {
+      try {
+        const loginRes = await fetch('http://localhost:8080/api/v1/auth/dummy-login', { method: 'POST' });
+        if (loginRes.ok) {
+          const tok = await loginRes.text();
+          localStorage.setItem('ACCESS_TOKEN', tok);
+        }
+      } catch (_) { /* 로그인 실패해도 계속 진행 (백엔드가 익명 처리) */ }
+    }
+
     const targetUrl      = document.getElementById('targetUrl')?.value || '';
     const serviceType    = document.getElementById('serviceType')?.value || '';
     const categoryStatus = SERVICE_TYPE_MAP[serviceType] || 'ETC';
