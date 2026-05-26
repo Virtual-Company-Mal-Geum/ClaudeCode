@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GEO — 회원가입</title>
+<link rel="stylesheet" href="geo-styles.css">
+</head>
+<body class="page-signup">
+
+<div class="topbar">
+  <a href="geo-index.html" class="geo-logo">GE<span>O</span></a>
+  <div class="topbar-right">이미 계정이 있으신가요? <a href="geo-login.html">로그인</a></div>
+</div>
+
+<div class="progress-bar">
+  <div class="prog-step active" id="step1"><div class="prog-dot">1</div>계정 정보</div>
+  <div class="prog-line" id="line1"></div>
+  <div class="prog-step" id="step2"><div class="prog-dot">2</div>약관 동의</div>
+</div>
+
+<main>
+  <div class="page-header">
+    <div class="page-title">GEO-MINI</div>
+  </div>
+
+  <form id="signupForm">
+
+    <!-- STEP 01 -->
+    <div class="form-card">
+      <div class="card-section-title">계정 정보 <span>STEP 01</span></div>
+      <div class="field-row-2">
+        <div class="field">
+          <label>성<span class="req">*</span></label>
+          <div class="input-wrap"><input type="text" placeholder="김" required></div>
+        </div>
+        <div class="field">
+          <label>이름<span class="req">*</span></label>
+          <div class="input-wrap"><input type="text" placeholder="철수" required></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>이메일<span class="req">*</span></label>
+        <div class="input-wrap"><span class="input-icon">✉</span><input type="email" placeholder="name@company.com" required></div>
+      </div>
+      <div class="field">
+        <label>소속 기관 / 회사</label>
+        <div class="input-wrap"><span class="input-icon">🏢</span><input type="text" placeholder="(주)예시기업"></div>
+      </div>
+      <div class="field">
+        <label>비밀번호<span class="req">*</span></label>
+        <div class="input-wrap"><span class="input-icon">🔒</span><input type="password" id="pwInput" placeholder="8자 이상 입력" required></div>
+        <div class="pw-strength">
+          <div class="pw-bar" id="pw1"></div>
+          <div class="pw-bar" id="pw2"></div>
+          <div class="pw-bar" id="pw3"></div>
+          <div class="pw-bar" id="pw4"></div>
+          <span class="pw-label" id="pwLabel"></span>
+        </div>
+      </div>
+      <div class="field">
+        <label>비밀번호 확인<span class="req">*</span></label>
+        <div class="input-wrap"><span class="input-icon">🔒</span><input type="password" placeholder="비밀번호를 다시 입력" required></div>
+      </div>
+    </div>
+
+    <!-- STEP 02 -->
+    <div class="form-card">
+      <div class="card-section-title">약관 동의 <span>STEP 02</span></div>
+      <div class="terms-block">
+        <div class="terms-check"><input type="checkbox" id="allAgree"><label for="allAgree" style="font-weight:600;color:var(--blue-900)">전체 동의</label></div>
+        <div class="terms-check"><input type="checkbox" class="sub-agree" required><label>이용약관에 동의합니다 (필수) <a href="#">보기</a></label></div>
+        <div class="terms-check"><input type="checkbox" class="sub-agree" required><label>개인정보 처리방침에 동의합니다 (필수) <a href="#">보기</a></label></div>
+        <div class="terms-check"><input type="checkbox" class="sub-agree"><label>마케팅 정보 수신에 동의합니다 (선택) <a href="#">보기</a></label></div>
+      </div>
+      <button class="btn btn-submit" type="submit">계정 만들기 →</button>
+    </div>
+
+  </form>
+</main>
+
+<script src="geo-scripts.js"></script>
+</body>
+</html>
