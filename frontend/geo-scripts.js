@@ -414,26 +414,45 @@ window.filterProjects = filterProjects;
 
 /* ── 로컬 프록시 엔드포인트 ── */
 const AI_ENDPOINT = '/api/evaluate';
+
+// 카테고리 1: Entity & Topic Clarity       /15
+// 카테고리 2: Answerability & Content Structure /25
+// 카테고리 3: Evidence & Citation Readiness  /20
+// 카테고리 4: Schema-HTML Alignment         /15
+// 카테고리 5: Domain-Specific Completeness   /15
+// 카테고리 6: Freshness & Operational Trust  /10
 const CATEGORY_ORDER = [
-  'entity_density',
-  'structural_accessibility',
-  'citation_readiness',
-  'hallucination_resistance',
-  'domain_optimization'
+  'entity_clarity',
+  'answerability',
+  'evidence_citation',
+  'schema_alignment',
+  'domain_completeness',
+  'freshness_trust'
 ];
 const CATEGORY_LABELS = {
-  entity_density: '엔티티 밀도',
-  structural_accessibility: '구조적 접근성',
-  citation_readiness: '출처 명확성',
-  hallucination_resistance: '환각 저항성',
-  domain_optimization: '도메인 최적화'
+  entity_clarity:      '엔티티·주제 명확성',
+  answerability:       '콘텐츠 구조·답변성',
+  evidence_citation:   '근거·인용 준비',
+  schema_alignment:    '스키마-HTML 정렬',
+  domain_completeness: '도메인별 완성도',
+  freshness_trust:     '최신성·운영 신뢰'
 };
 const CATEGORY_SHORT_LABELS = {
-  entity_density: '엔티티',
-  structural_accessibility: '접근성',
-  citation_readiness: '출처',
-  hallucination_resistance: '환각',
-  domain_optimization: '도메인'
+  entity_clarity:      '엔티티',
+  answerability:       '답변성',
+  evidence_citation:   '근거',
+  schema_alignment:    '스키마',
+  domain_completeness: '도메인',
+  freshness_trust:     '최신성'
+};
+// 카테고리별 만점 (각 배점이 다름)
+const CATEGORY_MAX = {
+  entity_clarity:      15,
+  answerability:       25,
+  evidence_citation:   20,
+  schema_alignment:    15,
+  domain_completeness: 15,
+  freshness_trust:     10
 };
 
 function normalizeJsonLdPayload(value) {
@@ -453,11 +472,24 @@ function normalizeJsonLdPayload(value) {
 function normalizeCategoryKey(label) {
   const text = String(label || '').toLowerCase();
 
-  if (text.includes('entity') || text.includes('엔티티')) return 'entity_density';
-  if (text.includes('structural') || text.includes('접근성') || text.includes('구조')) return 'structural_accessibility';
-  if (text.includes('citation') || text.includes('출처') || text.includes('인용')) return 'citation_readiness';
-  if (text.includes('hallucination') || text.includes('환각')) return 'hallucination_resistance';
-  if (text.includes('domain') || text.includes('도메인') || text.includes('최적화')) return 'domain_optimization';
+  // 카테고리 1: Entity & Topic Clarity
+  if (text.includes('entity') || text.includes('topic') || text.includes('clarity') ||
+      text.includes('엔티티') || text.includes('주제') || text.includes('명확성')) return 'entity_clarity';
+  // 카테고리 2: Answerability & Content Structure
+  if (text.includes('answer') || text.includes('content structure') || text.includes('answerability') ||
+      text.includes('답변') || text.includes('콘텐츠') || text.includes('구조')) return 'answerability';
+  // 카테고리 3: Evidence & Citation Readiness
+  if (text.includes('evidence') || text.includes('citation') || text.includes('readiness') ||
+      text.includes('근거') || text.includes('인용') || text.includes('출처')) return 'evidence_citation';
+  // 카테고리 4: Schema-HTML Alignment
+  if (text.includes('schema') || text.includes('html') || text.includes('alignment') ||
+      text.includes('스키마') || text.includes('정렬')) return 'schema_alignment';
+  // 카테고리 5: Domain-Specific Completeness
+  if (text.includes('domain') || text.includes('completeness') || text.includes('specific') ||
+      text.includes('도메인') || text.includes('완성')) return 'domain_completeness';
+  // 카테고리 6: Freshness & Operational Trust
+  if (text.includes('fresh') || text.includes('operational') || text.includes('trust') ||
+      text.includes('최신') || text.includes('운영') || text.includes('신뢰')) return 'freshness_trust';
   return '';
 }
 
@@ -604,11 +636,12 @@ function renderPage(report) {
   document.getElementById('kpi-total-bar').dataset.w = pct + '%';
 
   const kpiMap = {
-    entity_density:           ['kpi-entity',        'kpi-entity-bar'],
-    structural_accessibility: ['kpi-structural',     'kpi-structural-bar'],
-    citation_readiness:       ['kpi-citation',       'kpi-citation-bar'],
-    hallucination_resistance: ['kpi-hallucination',  'kpi-hallucination-bar'],
-    domain_optimization:      ['kpi-domain',         'kpi-domain-bar']
+    entity_clarity:      ['kpi-entity-clarity',         'kpi-entity-clarity-bar'],
+    answerability:       ['kpi-answerability',           'kpi-answerability-bar'],
+    evidence_citation:   ['kpi-evidence',                'kpi-evidence-bar'],
+    schema_alignment:    ['kpi-schema',                  'kpi-schema-bar'],
+    domain_completeness: ['kpi-domain-completeness',     'kpi-domain-completeness-bar'],
+    freshness_trust:     ['kpi-freshness',               'kpi-freshness-bar']
   };
 
   Object.entries(kpiMap).forEach(([key, [valId, barId]]) => {
@@ -677,7 +710,8 @@ function initRadarChart(catKeys, cats) {
     draw(w);
   }
 
-  const scores = catKeys.map(k => cats[k].score / cats[k].max);
+  // 각 카테고리를 만점 대비 달성률(0~1)로 정규화하여 레이더에 표시
+  const scores = catKeys.map(k => cats[k].score / (cats[k].max || CATEGORY_MAX[k] || 1));
   const N = catKeys.length;
   let prog = 0;
 
@@ -751,11 +785,15 @@ function initBarChart(catKeys, cats) {
   const dpr = window.devicePixelRatio || 1;
 
   const SCORES = catKeys.map(k => cats[k].score);
+  const MAXES  = catKeys.map(k => cats[k].max || CATEGORY_MAX[k] || 25);
   const SHORT  = catKeys.map(key => CATEGORY_SHORT_LABELS[key] || key);
-  const COLORS = ['#0099ff','#7b5ea7','#00c896','#ff8c00','#00b5b5'];
+  const COLORS = ['#0099ff','#7b5ea7','#00c896','#ff8c00','#00b5b5','#6b46c1'];
   const PAD    = { l: 44, r: 20, t: 20, b: 56 };
   const H      = 280;
   let animProg = 0;
+
+  // y축 최대값: 카테고리 중 가장 높은 만점 (answerability = 25)
+  const Y_MAX = Math.max(...MAXES);
 
   function resize() {
     const w = canvas.parentElement.offsetWidth - 48;
@@ -774,26 +812,38 @@ function initBarChart(catKeys, cats) {
     const bw = (cw / SCORES.length) - 12;
 
     SCORES.forEach((v, i) => {
-      const bh = (v / 10) * ch * animProg;
+      const bh = (v / Y_MAX) * ch * animProg;
       const x  = PAD.l + i * (cw / SCORES.length) + 6;
       const y  = PAD.t + ch - bh;
 
-      ctx.fillStyle = COLORS[i];
+      // 만점 대비 달성률에 따라 바 투명도 조절
+      ctx.fillStyle = COLORS[i % COLORS.length];
       ctx.beginPath(); ctx.roundRect(x, y, bw, bh, 5); ctx.fill();
+
+      // 만점 기준선 (점선)
+      const maxBarH = (MAXES[i] / Y_MAX) * ch;
+      const maxY = PAD.t + ch - maxBarH;
+      ctx.save();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = COLORS[i % COLORS.length] + '88';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, maxY); ctx.lineTo(x + bw, maxY); ctx.stroke();
+      ctx.restore();
 
       if (animProg > 0.9) {
         ctx.fillStyle = '#0a1628'; ctx.font = 'bold 11px DM Sans, sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(v.toFixed(1), x + bw / 2, y - 6);
+        ctx.fillText(v + '/' + MAXES[i], x + bw / 2, y - 6);
       }
 
       ctx.fillStyle = '#4a6685'; ctx.font = 'bold 10px DM Sans, sans-serif'; ctx.textAlign = 'center';
       ctx.fillText(SHORT[i] || catKeys[i], x + bw / 2, H - PAD.b + 18);
     });
 
+    // y축 눈금 (0 ~ Y_MAX, 5단계)
     for (let i = 0; i <= 5; i++) {
       const y = PAD.t + ch * (1 - i / 5);
       ctx.fillStyle = '#8aaac8'; ctx.font = '9px DM Mono, sans-serif'; ctx.textAlign = 'right';
-      ctx.fillText((10 * i / 5).toFixed(0), PAD.l - 6, y + 4);
+      ctx.fillText((Y_MAX * i / 5).toFixed(0), PAD.l - 6, y + 4);
       ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cw, y);
       ctx.strokeStyle = 'rgba(136,170,200,0.15)'; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
