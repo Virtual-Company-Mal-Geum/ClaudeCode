@@ -2,9 +2,17 @@ package com.malgeum.geo.service;
 
 import java.io.IOException;
 import java.net.URI;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +23,7 @@ import org.jsoup.select.Elements;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -25,6 +34,31 @@ public class GeoScrapingService {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/124.0.0.0 Safari/537.36";
+
+    /**
+     * 앱 시작 시 SSL 인증서 검증을 우회합니다.
+     * 일부 한국 사이트(히마트 등)는 SAN이 없는 구형 인증서를 사용하여
+     * Java 기본 SSL 검증에서 거부됩니다.
+     */
+    @PostConstruct
+    private void disableSslVerification() {
+        try {
+            TrustManager[] trustAll = new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                    public void checkClientTrusted(X509Certificate[] c, String a) {}
+                    public void checkServerTrusted(X509Certificate[] c, String a) {}
+                }
+            };
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, trustAll, new java.security.SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> true);
+            log.info("[GeoScrapingService] SSL 인증서 검증 우회 설정 완료 (구형 인증서 사이트 지원)");
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            log.warn("[GeoScrapingService] SSL 우회 설정 실패: {}", e.getMessage());
+        }
+    }
 
     // AI 서버가 요구하는 모든 필드 포함
     public record ScrapedData(String htmlText, JsonNode jsonLd, String domain, Map<String, String> metaTags) {}

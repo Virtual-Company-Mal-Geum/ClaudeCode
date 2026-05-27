@@ -43,8 +43,24 @@ public class GeoAsyncWorker {
             // 1. 상태를 PROCESSING(진행 중)으로 변경
             order.updateStatus(Order.JobStatus.PROCESSING);
             String targetUrl = order.getTargetUrl();
-            // 2. Jsoup 스크래핑 실행 (부품 1)
-            ScrapedData scrapedData = geoScrapingService.extractDataForAi(targetUrl);
+
+            // 2. Jsoup 스크래핑 실행 — 실패해도 빈 데이터로 AI 분석 계속 진행
+            ScrapedData scrapedData;
+            try {
+                scrapedData = geoScrapingService.extractDataForAi(targetUrl);
+            } catch (Exception scrapEx) {
+                log.warn("[AsyncWorker] 스크래핑 실패, 빈 데이터로 AI 분석 계속 진행 - OrderID: {}, 원인: {}",
+                        orderId, scrapEx.getMessage());
+                // domain만 추출하고 나머지는 빈 값으로 채움
+                String domain = "";
+                try { domain = new java.net.URI(targetUrl).getHost(); } catch (Exception ignored) {}
+                scrapedData = new ScrapedData(
+                        "", // htmlText 없음
+                        new com.fasterxml.jackson.databind.ObjectMapper().readTree("[]"), // jsonLd 빈 배열
+                        domain != null ? domain : "",
+                        java.util.Map.of() // metaTags 없음
+                );
+            }
             // 3. AI 서버에 평가 요청 (부품 2) — domain, meta_tags 포함
             GeoEvaluationResponse aiResponse = geoAiService.evaluateTarget(
                     targetUrl,
