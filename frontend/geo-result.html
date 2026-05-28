@@ -119,13 +119,13 @@
     </div>
 
     <!-- 원본 JSON-LD -->
-    <div class="chart-card span-12">
+    <div class="chart-card span-6">
       <div class="chart-card-header">
         <div>
-          <div class="chart-card-title">분석된 JSON-LD</div>
-          <div class="chart-card-sub">입력된 구조화 데이터 원문</div>
+          <div class="chart-card-title">현재 JSON-LD</div>
+          <div class="chart-card-sub">페이지에서 감지된 구조화 데이터 원문</div>
         </div>
-        <span class="chart-card-tag">JSON-LD</span>
+        <span class="chart-card-tag">현재</span>
       </div>
       <pre id="jsonLdBlock" style="
         background:var(--gray-100);
@@ -139,7 +139,42 @@
         margin:0;
         white-space:pre-wrap;
         word-break:break-all;
+        max-height:420px;
       ">—</pre>
+    </div>
+
+    <!-- AI 개선 JSON-LD -->
+    <div class="chart-card span-6" id="suggested-jsonld-card">
+      <div class="chart-card-header">
+        <div>
+          <div class="chart-card-title">✨ AI 개선 JSON-LD 제안</div>
+          <div class="chart-card-sub">GEO 점수 향상을 위한 최적화 코드</div>
+        </div>
+        <button id="copy-jsonld-btn" onclick="copyJsonLd()" style="
+          background:var(--accent);
+          color:#fff;
+          border:none;
+          border-radius:6px;
+          padding:6px 14px;
+          font-size:0.78rem;
+          cursor:pointer;
+          font-family:var(--font-sans);
+        ">📋 복사</button>
+      </div>
+      <pre id="suggestedJsonLdBlock" style="
+        background:#0a1628;
+        border-radius:10px;
+        padding:20px;
+        font-family:var(--font-mono);
+        font-size:0.78rem;
+        color:#7dd3fc;
+        overflow-x:auto;
+        line-height:1.7;
+        margin:0;
+        white-space:pre-wrap;
+        word-break:break-all;
+        max-height:420px;
+      ">AI 분석 완료 후 표시됩니다...</pre>
     </div>
 
   </div>

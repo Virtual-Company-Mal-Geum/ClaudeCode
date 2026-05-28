@@ -1,10 +1,12 @@
 package com.malgeum.geo.service;
 
+import java.util.HashMap;
 import java.util.Map;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.malgeum.geo.domain.domain.AnalysisReport;
 import com.malgeum.geo.domain.domain.Order;
@@ -72,10 +74,27 @@ public class GeoAsyncWorker {
             // 4. 성공: 결과 리포트(AnalysisReport) 생성 및 상태 업데이트
             if ("success".equals(aiResponse.status())) {
                 String content = aiResponse.content() != null ? aiResponse.content() : "";
+
+                // AI 응답 JSON에서 suggested_json_ld 추출
+                Map<String, Object> aiLogMap = new HashMap<>();
+                aiLogMap.put("content", content);
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode aiJson = mapper.readTree(content);
+                    JsonNode suggestedJsonLd = aiJson.get("suggested_json_ld");
+                    if (suggestedJsonLd != null && !suggestedJsonLd.isNull()) {
+                        aiLogMap.put("suggested_json_ld", mapper.convertValue(suggestedJsonLd, Object.class));
+                        log.info("[AsyncWorker] suggested_json_ld 추출 성공 - OrderID: {}", orderId);
+                    }
+                } catch (Exception parseEx) {
+                    log.warn("[AsyncWorker] suggested_json_ld 파싱 실패 (무시) - OrderID: {}, 원인: {}",
+                            orderId, parseEx.getMessage());
+                }
+
                 AnalysisReport report = AnalysisReport.builder()
                         .clientOrder(order)
-                        .rawScrapedData(Map.of("htmlText", scrapedData.htmlText().toString()))
-                        .rawAILog(Map.of("content", content))
+                        .rawScrapedData(Map.of("htmlText", scrapedData.htmlText()))
+                        .rawAILog(aiLogMap)
                         .build();
                 analysisReportRepository.save(report);
                 order.updateStatus(Order.JobStatus.SUCCESS);

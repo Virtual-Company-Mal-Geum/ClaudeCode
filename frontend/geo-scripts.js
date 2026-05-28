@@ -661,14 +661,17 @@ function parseAiResponse(data) {
       })
       .then(data => {
         if (data.jobStatus === 'SUCCESS') {
-          const aiText   = (data.aiResult && data.aiResult.content) ? data.aiResult.content : '';
-          const aiResult = parseAiResponse({ content: aiText });
+          const aiText        = (data.aiResult && data.aiResult.content) ? data.aiResult.content : '';
+          const aiResult      = parseAiResponse({ content: aiText });
+          const suggestedJsonLd = (data.aiResult && data.aiResult.suggested_json_ld)
+            ? data.aiResult.suggested_json_ld : null;
           renderPage({
             orderId:    data.orderId,
             targetUrl:  data.targetUrl,
             jobStatus:  data.jobStatus,
             createdAt:  data.createdAt,
-            rawContent: aiText,   // 파싱 실패 시 raw 표시용
+            rawContent: aiText,
+            suggestedJsonLd,
             aiResult: {
               total_score: aiResult.total_score,
               max_score:   aiResult.max_score,
@@ -784,13 +787,28 @@ function renderPage(report) {
     }).join('');
   }
 
+  // 현재 JSON-LD
   try {
     const parsed = typeof ai.json_ld === 'string' ? JSON.parse(ai.json_ld) : ai.json_ld;
     const block  = document.getElementById('jsonLdBlock');
     if (block) block.textContent = JSON.stringify(parsed, null, 2);
   } catch {
     const block = document.getElementById('jsonLdBlock');
-    if (block) block.textContent = ai.json_ld || '—';
+    if (block) block.textContent = ai.json_ld || '(JSON-LD 없음)';
+  }
+
+  // AI 개선 JSON-LD
+  const sugBlock = document.getElementById('suggestedJsonLdBlock');
+  if (sugBlock) {
+    if (report.suggestedJsonLd) {
+      try {
+        sugBlock.textContent = JSON.stringify(report.suggestedJsonLd, null, 2);
+      } catch {
+        sugBlock.textContent = String(report.suggestedJsonLd);
+      }
+    } else {
+      sugBlock.textContent = '(AI 서버에서 개선 JSON-LD가 반환되지 않았습니다.\n프롬프트에 suggested_json_ld 항목을 추가해주세요.)';
+    }
   }
 
   initRadarChart(catKeys, cats);
@@ -972,6 +990,22 @@ function switchTab(btn, type) {
   btn.classList.add('active');
 }
 window.switchTab = switchTab;
+
+/* ── 개선 JSON-LD 복사 ── */
+function copyJsonLd() {
+  const block = document.getElementById('suggestedJsonLdBlock');
+  if (!block || !block.textContent) return;
+  navigator.clipboard.writeText(block.textContent).then(() => {
+    const btn = document.getElementById('copy-jsonld-btn');
+    if (btn) {
+      btn.textContent = '✅ 복사됨!';
+      setTimeout(() => { btn.textContent = '📋 복사'; }, 2000);
+    }
+  }).catch(() => {
+    alert('복사 실패 — 직접 선택 후 Ctrl+C 해주세요.');
+  });
+}
+window.copyJsonLd = copyJsonLd;
 
 
 /* ============================================================
