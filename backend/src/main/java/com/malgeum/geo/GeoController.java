@@ -1,5 +1,7 @@
 package com.malgeum.geo;
 
+import java.util.List;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +48,12 @@ public class GeoController {
     }
 
     //TODO:분석 완료 후, AI서버로부터 온 결과물 받고 처리 (AI서버->)
+
+    // 주문 목록 조회 (대시보드용)
+    @GetMapping("/orders")
+    public ResponseEntity<List<OrderService.OrderSummary>> getOrders() {
+        return ResponseEntity.ok(orderService.getOrders());
+    }
 
     //AI 분석 결과 조회 (백엔드->프론트)
     @GetMapping("/report/{orderId}")

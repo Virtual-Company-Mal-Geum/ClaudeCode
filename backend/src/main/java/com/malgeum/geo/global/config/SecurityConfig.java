@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/geo/signUp").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/dummy-login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/geo/analyze").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/geo/orders").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/geo/report/**").permitAll()
                 .anyRequest().authenticated()
             )

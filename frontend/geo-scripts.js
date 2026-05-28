@@ -1,5 +1,8 @@
 'use strict';
 
+/* ── API 기본 URL — 발표 환경에서 이 한 줄만 바꾸면 됩니다 ── */
+const API_BASE = `http://${window.location.hostname}:8080`;
+
 /* ── CUSTOM CURSOR ── */
 (function initCursor() {
   const cursor = document.getElementById('cursor');
@@ -266,7 +269,7 @@
     btn.disabled = true;
 
     try {
-      const res = await fetch('http://localhost:8080/api/v1/auth/dummy-login', { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/v1/auth/dummy-login`, { method: 'POST' });
       if (res.ok) {
         const token = await res.text();
         localStorage.setItem('ACCESS_TOKEN', token);
@@ -397,7 +400,7 @@ function updatePageInfo() {
   const total   = document.querySelectorAll('.project-row-wrap').length;
   const visible = [...document.querySelectorAll('.project-row-wrap')]
     .filter(r => r.style.display !== 'none').length;
-  const info = document.querySelector('.page-info');
+  const info = document.getElementById('pageInfo') || document.querySelector('.page-info');
   if (info) info.textContent = `총 ${total}건 · ${visible}건 표시 중`;
 }
 
@@ -651,7 +654,7 @@ function parseAiResponse(data) {
 
   function poll() {
     attempts++;
-    fetch('http://localhost:8080/api/v1/geo/report/' + orderId, { headers })
+    fetch(`${API_BASE}/api/v1/geo/report/` + orderId, { headers })
       .then(res => {
         if (!res.ok) throw new Error('서버 오류: ' + res.status);
         return res.json();
@@ -999,7 +1002,7 @@ window.switchTab = switchTab;
     // 토큰 없으면 더미 로그인 자동 실행
     if (!localStorage.getItem('ACCESS_TOKEN')) {
       try {
-        const loginRes = await fetch('http://localhost:8080/api/v1/auth/dummy-login', { method: 'POST' });
+        const loginRes = await fetch(`${API_BASE}/api/v1/auth/dummy-login`, { method: 'POST' });
         if (loginRes.ok) {
           const tok = await loginRes.text();
           localStorage.setItem('ACCESS_TOKEN', tok);
@@ -1013,7 +1016,7 @@ window.switchTab = switchTab;
     const token          = localStorage.getItem('ACCESS_TOKEN');
 
     try {
-      const res = await fetch('http://localhost:8080/api/v1/geo/analyze', {
+      const res = await fetch(`${API_BASE}/api/v1/geo/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1036,51 +1039,113 @@ window.switchTab = switchTab;
 
 
 /* ============================================================
-   GEO Personal Page — localStorage 의뢰 목록 동적 렌더링
+   GEO Personal Page — DB 연동 의뢰 목록
    ============================================================ */
 
 (function initPersonalOrders() {
   const list = document.getElementById('projectList');
   if (!list) return;
 
-  const orders = JSON.parse(localStorage.getItem('geoOrders') || '[]');
-  if (orders.length === 0) return;
-
-  const iconMap = {
-    '쇼핑몰 / 이커머스': '🛒',
-    '뉴스 / 미디어':     '📰',
-    'SaaS / 테크':       '💻',
-    '교육 / 학술':       '🎓',
-    '의료 / 헬스케어':   '🏥',
-    '로컬 비즈니스':     '🏪',
-    '기타':              '🌐',
+  const ICON_MAP = {
+    ECOMMERCE: '🛒', NEWS: '📰', TECHBLOG: '💻',
+    EDUCATION: '🎓', ETC: '🌐'
+  };
+  const STATUS_MAP = {
+    SUCCESS:    { cls: 'done',     label: '● 완료',    filterKey: 'done' },
+    PROCESSING: { cls: 'progress', label: '◉ 진행 중', filterKey: 'progress' },
+    PENDING:    { cls: 'queued',   label: '◌ 대기 중', filterKey: 'queued' },
+    FAILED:     { cls: 'failed',   label: '✕ 실패',    filterKey: 'failed' }
   };
 
-  orders.forEach(order => {
-    const icon  = iconMap[order.serviceType] || '🌐';
-    const items = (order.analysisItems || []).join(' · ') || '기본 분석';
-    const wrap  = document.createElement('div');
-    wrap.className  = 'project-row-wrap';
-    wrap.dataset.status = order.status || 'queued';
+  const token = localStorage.getItem('ACCESS_TOKEN');
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
-    wrap.innerHTML = `
-      <div class="project-row">
-        <div class="proj-icon geo">${icon}</div>
-        <div class="proj-info">
-          <div class="proj-name">${order.siteName || order.targetUrl}</div>
-          <div class="proj-meta">${order.targetUrl} · ${items}</div>
-        </div>
-        <div class="proj-date">${order.date}</div>
-        <span class="status-badge queued">◌ 대기 중</span>
-      </div>`;
+  fetch(`${API_BASE}/api/v1/geo/orders`, { headers })
+    .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+    .then(orders => {
+      // 로딩 스피너 제거
+      const loading = document.getElementById('list-loading');
+      if (loading) loading.remove();
 
-    list.insertBefore(wrap, list.firstChild);
-  });
+      if (!orders || orders.length === 0) {
+        list.innerHTML = `
+          <div style="text-align:center;padding:64px;color:var(--gray-400);">
+            아직 의뢰 내역이 없습니다.<br>
+            <a href="geo-order.html" style="color:var(--accent);margin-top:12px;display:inline-block;">+ 첫 번째 분석 의뢰하기</a>
+          </div>`;
+        updateStats(0, 0, 0, 0);
+        return;
+      }
 
-  const totalEl = document.querySelector('.stat-card.c-blue .sc-val');
-  const queueEl = document.querySelector('.stat-card.c-orange .sc-val');
-  if (totalEl) totalEl.textContent = parseInt(totalEl.textContent) + orders.length;
-  if (queueEl) queueEl.textContent = parseInt(queueEl.textContent) + orders.length;
+      // 통계 계산
+      const now = new Date();
+      let total = orders.length, done = 0, progress = 0, month = 0;
+      orders.forEach(o => {
+        if (o.jobStatus === 'SUCCESS') done++;
+        if (o.jobStatus === 'PROCESSING' || o.jobStatus === 'PENDING') progress++;
+        if (o.createdAt) {
+          const d = new Date(o.createdAt);
+          if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) month++;
+        }
+      });
+      updateStats(total, done, progress, month);
 
-  updatePageInfo();
+      // 목록 렌더링
+      orders.forEach(order => {
+        const st     = STATUS_MAP[order.jobStatus] || STATUS_MAP.PENDING;
+        const icon   = ICON_MAP[order.categoryStatus] || '🌐';
+        const date   = order.createdAt
+          ? new Date(order.createdAt).toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\. /g,'.').replace('.','')
+          : '—';
+
+        // URL에서 도메인만 표시
+        let displayName = order.targetUrl;
+        try { displayName = new URL(order.targetUrl).hostname; } catch (_) {}
+
+        const wrap = document.createElement('div');
+        wrap.className = 'project-row-wrap';
+        wrap.dataset.status = st.filterKey;
+
+        const isDone = order.jobStatus === 'SUCCESS';
+        const rowTag = isDone ? `<a class="project-row" href="geo-result.html?orderId=${order.orderId}">` : `<div class="project-row">`;
+        const rowEnd = isDone ? '</a>' : '</div>';
+        const actions = isDone ? `
+          <div class="proj-actions">
+            <a href="geo-result.html?orderId=${order.orderId}" class="action-btn view">결과 보기</a>
+          </div>` : '';
+
+        wrap.innerHTML = `
+          ${rowTag}
+            <div class="proj-icon geo">${icon}</div>
+            <div class="proj-info">
+              <div class="proj-name">${displayName}</div>
+              <div class="proj-meta">${order.targetUrl.slice(0, 60)}${order.targetUrl.length > 60 ? '…' : ''}</div>
+            </div>
+            <div class="proj-date">${date}</div>
+            <span class="status-badge ${st.cls}">${st.label}</span>
+          ${rowEnd}
+          ${actions}`;
+
+        list.appendChild(wrap);
+      });
+
+      updatePageInfo();
+    })
+    .catch(err => {
+      const loading = document.getElementById('list-loading');
+      if (loading) loading.textContent = '⚠ 목록을 불러올 수 없습니다. (' + err.message + ')';
+      console.error('[GEO] 주문 목록 로드 실패:', err);
+    });
+
+  function updateStats(total, done, progress, month) {
+    const s = id => document.getElementById(id);
+    if (s('stat-total'))    s('stat-total').textContent    = total;
+    if (s('stat-done'))     s('stat-done').textContent     = done;
+    if (s('stat-progress')) s('stat-progress').textContent = progress;
+    if (s('stat-month'))    s('stat-month').textContent    = month;
+
+    // 사이드바 뱃지도 업데이트
+    const badge = document.querySelector('.nav-badge');
+    if (badge) badge.textContent = total;
+  }
 })();

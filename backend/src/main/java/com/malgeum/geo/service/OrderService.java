@@ -1,7 +1,11 @@
 package com.malgeum.geo.service;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.malgeum.geo.domain.domain.Client;
 import com.malgeum.geo.domain.domain.Order;
@@ -9,7 +13,6 @@ import com.malgeum.geo.domain.domain.Order.CategoryStatus;
 import com.malgeum.geo.global.common.ClientRepository;
 import com.malgeum.geo.global.common.OrderRepository;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -53,14 +56,41 @@ public class OrderService {
                 .orElseThrow(() -> new RuntimeException("초기화된 테스트 클라이언트가 없습니다. DataInitializer를 확인하세요."));
     }
 
+    /** 현재 클라이언트의 전체 주문 목록 반환 (대시보드용) */
+    @Transactional(readOnly = true)
+    public List<OrderSummary> getOrders() {
+        String authName = SecurityContextHolder.getContext().getAuthentication().getName();
+        Long clientId;
+        try {
+            clientId = Long.valueOf(authName);
+        } catch (NumberFormatException e) {
+            log.warn("[OrderService] 비인증 요청 — 기본 클라이언트 목록 반환");
+            clientId = getDefaultClient().getId();
+        }
+        return orderRepository.findByClientIdOrderByCreatedAtDesc(clientId)
+                .stream()
+                .map(o -> new OrderSummary(
+                        o.getId(),
+                        o.getTargetUrl(),
+                        o.getCategoryStatus().name(),
+                        o.getJobStatus().name(),
+                        o.getCreatedAt()))
+                .toList();
+    }
+
     // 2. 주문서 생성 (초기 상태: PENDING)
-    public Order createOrder(Client client, String targetUrl,CategoryStatus categoryStatus) {
-        Order order = Order.builder()
+    public Order createOrder(Client client, String targetUrl, CategoryStatus categoryStatus) {
+        return Order.builder()
                 .client(client)
                 .targetUrl(targetUrl)
                 .categoryStatus(categoryStatus)
                 .build();
-        return order;
     }
 
+    public record OrderSummary(
+            Long orderId,
+            String targetUrl,
+            String categoryStatus,
+            String jobStatus,
+            LocalDateTime createdAt) {}
 }
